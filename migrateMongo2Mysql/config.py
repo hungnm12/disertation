@@ -1,16 +1,17 @@
 # Source Database Configuration
 mongo_config = {
-    'url': 'mongodb://localhost:27017/hung',
-
-    'db_name': 'sample',
+    'url': '',
+    'user': '',
+    'password': '',
+    'db_name': '',
 
 }
 
 # Destination Database Configuration
 mysql_config = {
     'host': 'localhost',
-    'user': 'root',
+    'user': 'hung',
     'password': 'hung',
 }
 
-mysql_db_name = 'sampledb'
+mysql_db_name = 'sample'
