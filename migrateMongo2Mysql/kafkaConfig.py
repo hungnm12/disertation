@@ -1,15 +1,23 @@
 from confluent_kafka import Consumer
 import json
-
+import logging
 from config import mongo_config
-from migrate import main
+from migrate import run_migration
 
-# ... other imports ...
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("kafka_consumer.log"),
+        logging.StreamHandler()
+    ]
+)
 
 # Consumer configuration
 config = {
     'bootstrap.servers': 'localhost:9092',
-    'group.id': 'my-consumer-group',
+    'group.id': 'db-connection-service-group',
     'auto.offset.reset': 'earliest'
 }
 
@@ -17,7 +25,7 @@ config = {
 consumer = Consumer(config)
 
 # Subscribe to the topic
-consumer.subscribe(['your-topic-name'])
+consumer.subscribe(['send-credential-topic'])
 
 try:
     while True:
@@ -26,8 +34,11 @@ try:
         if msg is None:
             continue
         elif msg.error():
-            print(f"Error: {msg.error()}")
+            logging.error(f"Error: {msg.error()}")
         else:
+            # Log the message reception
+            logging.info(f"Received message from Kafka: {msg.value().decode('utf-8')}")
+
             # Parse the received message (assuming JSON format)
             message = json.loads(msg.value().decode('utf-8'))
             mongo_config['url'] = message['mongo_url']
@@ -35,10 +46,15 @@ try:
             mongo_config['password'] = message['password']
             mongo_config['database'] = message['database']
 
-            # Now proceed with the data migration using the updated mongo_config
-            main()
-except KeyboardInterrupt:
-    pass
+            # Log the updated configuration
+            logging.info(f"Updated MongoDB configuration: {mongo_config}")
 
+            # Run the migration process with the received configuration
+            run_migration(mongo_config)
+
+except KeyboardInterrupt:
+    logging.info("Consumer interrupted and closing.")
 finally:
+    # Close the consumer
     consumer.close()
+    logging.info("Kafka consumer closed.")

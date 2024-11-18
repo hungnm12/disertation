@@ -6,7 +6,7 @@ import pymysql
 import traceback
 from datetime import datetime
 from bson.objectid import ObjectId
-from config import mongo_config, mysql_config, mysql_db_name
+from config import mysql_config, mysql_db_name
 
 DEFAULT_VARCHAR_SIZE = 25
 MAX_VARCHAR_LENGTH = 1000
@@ -28,7 +28,7 @@ def enquote(identifier):
     return f"`{identifier}`"
 
 def type_to_mysql(column_name, py_type, max_length):
-    varchar_type=f'VARCHAR({min(max(DEFAULT_VARCHAR_SIZE, (max_length // DEFAULT_VARCHAR_SIZE + 1) * DEFAULT_VARCHAR_SIZE), MAX_VARCHAR_LENGTH)})' if max_length and max_length <= MAX_VARCHAR_LENGTH else 'TEXT'
+    varchar_type = f'VARCHAR({min(max(DEFAULT_VARCHAR_SIZE, (max_length // DEFAULT_VARCHAR_SIZE + 1) * DEFAULT_VARCHAR_SIZE), MAX_VARCHAR_LENGTH)})' if max_length and max_length <= MAX_VARCHAR_LENGTH else 'TEXT'
     type_mapping = {
         'str': varchar_type,
         'int': 'INT',
@@ -121,7 +121,6 @@ def create_mysql_table(mysql_cursor, collection_name, document):
     sql = f"CREATE TABLE IF NOT EXISTS {enquote(collection_name)} ({', '.join(column_definitions)});"
     mysql_cursor.execute(sql)
 
-
 def insert_into_mysql(mysql_cursor, collection_name, document):
     collection_name = camel_to_snake(collection_name)
     document = {camel_to_snake(key): value for key, value in document.items() if key not in ['_id', '_class'] or (key == '_id' and not SKIP_ID_FIELD) or (key == '_class' and not SKIP_CLASS_FIELD)}
@@ -176,41 +175,44 @@ def insert_into_mysql(mysql_cursor, collection_name, document):
             else:
                 raise
 
-def main():
+def run_migration(mongo_config):
     try:
         start_time = time.time()  # Record the start time
+
         # Connect to MongoDB
-        with pymongo.MongoClient(mongo_config['url']) as mongo_client:
-            mongo_db = mongo_client[mongo_config['db_name']]
+        mongo_client = pymongo.MongoClient(mongo_config['uri'])
+        mongo_db = mongo_client[mongo_config['database']]
+        mongo_collection = mongo_db[mongo_config['collection']]
 
-            # Use a context manager to handle the MySQL database connection
-            with pymysql.connect(**mysql_config) as mysql_conn:
-                mysql_cursor = mysql_conn.cursor()
-                local_mysql_db_name = mysql_db_name.replace('-', '_')  # Use db_name directly here
-                # Drop the database if it exists
-                mysql_cursor.execute(f"DROP DATABASE IF EXISTS {local_mysql_db_name}")
-                # Create the database
-                mysql_cursor.execute(f"CREATE DATABASE {local_mysql_db_name}")
-                # Use the database
-                mysql_cursor.execute(f"USE {local_mysql_db_name}")
-                # Iterate over all collections in MongoDB
-                for collection_name in mongo_db.list_collection_names():
-                    print('\ncollection_name=', collection_name)
-                    collection = mongo_db[collection_name]
-                    # Get the structure of the collection
-                    document = collection.find_one()
-                    # Create a table in MySQL based on the collection's structure
-                    create_mysql_table(mysql_cursor, collection_name, document)
-                    # Insert data from MongoDB to MySQL
-                    for document in collection.find():
-                        insert_into_mysql(mysql_cursor, collection_name, document)
-                # Commit the transaction
-                mysql_conn.commit()
+        # Connect to MySQL
+        mysql_connection = pymysql.connect(
+            host=mysql_config['host'],
+            user=mysql_config['user'],
+            password=mysql_config['password'],
+            database=mysql_db_name
+        )
+        mysql_cursor = mysql_connection.cursor()
+
+        # Fetch data from MongoDB and insert it into MySQL
+        for document in mongo_collection.find():
+            table_name = mongo_config['collection']
+            create_mysql_table(mysql_cursor, table_name, document)
+            insert_into_mysql(mysql_cursor, table_name, document)
+
+        # Commit the transaction
+        mysql_connection.commit()
         end_time = time.time()  # Record the end time
-        total_time = round(end_time - start_time, 2)
-        print(f"\n\n========= Total time taken to migrate: {total_time} seconds =========")
-    except Exception as e:
-        traceback.print_exc(e)
+        print(f"Migration completed in {end_time - start_time:.2f} seconds.")
 
-if __name__ == "__main__":
-    main()
+    except Exception as e:
+        print("An error occurred during migration:")
+        print(traceback.format_exc())
+
+    finally:
+        # Close MongoDB connection
+        mongo_client.close()
+
+        # Close MySQL connection
+        mysql_cursor.close()
+        mysql_connection.close()
+
