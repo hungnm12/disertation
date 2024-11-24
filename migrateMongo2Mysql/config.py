@@ -9,9 +9,10 @@ mongo_config = {
 
 # Destination Database Configuration
 mysql_config = {
-    'host': 'localhost',
-    'user': 'hung',
-    'password': 'hung',
+    'host': '',
+    'user': '',
+    'port': 3306,
+    'password': '',
 }
 
-mysql_db_name = 'sample'
+mysql_db_name = ''

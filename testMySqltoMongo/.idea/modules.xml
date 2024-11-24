@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/testETLMongoMySQL.iml" filepath="$PROJECT_DIR$/.idea/testETLMongoMySQL.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/testMySqltoMongo.iml" filepath="$PROJECT_DIR$/.idea/testMySqltoMongo.iml" />
     </modules>
   </component>
 </project>

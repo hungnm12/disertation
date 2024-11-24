@@ -66,6 +66,7 @@ class MySQLToMongoConverter:
 # Example usage
 sql_config = {
     "host": os.getenv('SQL_HOST'),
+    "port": int(os.getenv('SQL_PORT')),
     "user": os.getenv('SQL_USER'),
     "password": os.getenv('SQL_PASSWORD'),
     "database": os.getenv('SQL_DATABASE'),

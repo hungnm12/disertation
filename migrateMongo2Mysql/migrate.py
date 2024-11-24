@@ -1,5 +1,6 @@
 import re
 import time
+import logging
 import json
 import pymongo
 import pymysql
@@ -175,15 +176,23 @@ def insert_into_mysql(mysql_cursor, collection_name, document):
             else:
                 raise
 
+
+logging.basicConfig(level=logging.INFO)
+
+
 def run_migration(mongo_config):
     try:
-        start_time = time.time()  # Record the start time
+        start_time = time.time()
+        logging.info("Connecting to MongoDB...")
 
         # Connect to MongoDB
         mongo_client = pymongo.MongoClient(mongo_config['uri'])
         mongo_db = mongo_client[mongo_config['database']]
         mongo_collection = mongo_db[mongo_config['collection']]
+        logging.info("Connected to MongoDB.")
+        logging.debug(f"MongoDB Document Count: {mongo_collection.count_documents({})}")
 
+        logging.info("Connecting to MySQL...")
         # Connect to MySQL
         mysql_connection = pymysql.connect(
             host=mysql_config['host'],
@@ -192,27 +201,35 @@ def run_migration(mongo_config):
             database=mysql_db_name
         )
         mysql_cursor = mysql_connection.cursor()
+        logging.info("Connected to MySQL.")
 
-        # Fetch data from MongoDB and insert it into MySQL
+        # Migrate data from MongoDB to MySQL
+        logging.info("Starting data migration...")
         for document in mongo_collection.find():
+            logging.debug(f"Processing document: {document}")
             table_name = mongo_config['collection']
             create_mysql_table(mysql_cursor, table_name, document)
             insert_into_mysql(mysql_cursor, table_name, document)
 
         # Commit the transaction
         mysql_connection.commit()
-        end_time = time.time()  # Record the end time
-        print(f"Migration completed in {end_time - start_time:.2f} seconds.")
+        end_time = time.time()
+        logging.info(f"Migration completed in {end_time - start_time:.2f} seconds.")
 
+    except pymongo.errors.ConnectionError:
+        logging.error("Failed to connect to MongoDB. Please check your MongoDB URI and credentials.")
+    except pymysql.MySQLError as e:
+        logging.error("MySQL error occurred:")
+        logging.error(traceback.format_exc())
     except Exception as e:
-        print("An error occurred during migration:")
-        print(traceback.format_exc())
-
+        logging.error("An unexpected error occurred during migration:")
+        logging.error(traceback.format_exc())
     finally:
         # Close MongoDB connection
         mongo_client.close()
+        logging.info("Closed MongoDB connection.")
 
         # Close MySQL connection
         mysql_cursor.close()
         mysql_connection.close()
-
+        logging.info("Closed MySQL connection.")

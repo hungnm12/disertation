@@ -28,29 +28,41 @@ consumer = Consumer(config)
 consumer.subscribe(['send-credential-topic'])
 
 try:
+    logging.info("Kafka Consumer started and awaiting messages...")
+
     while True:
+        # Poll for new messages
         msg = consumer.poll(1.0)
 
+        # If no message, continue polling
         if msg is None:
             continue
         elif msg.error():
-            logging.error(f"Error: {msg.error()}")
+            # Log any error received from Kafka
+            logging.error(f"Kafka error: {msg.error()}")
+            continue
         else:
-            # Log the message reception
+            # Successfully received a message, log it
             logging.info(f"Received message from Kafka: {msg.value().decode('utf-8')}")
 
-            # Parse the received message (assuming JSON format)
-            message = json.loads(msg.value().decode('utf-8'))
-            mongo_config['url'] = message['mongo_url']
-            mongo_config['username'] = message['username']
-            mongo_config['password'] = message['password']
-            mongo_config['database'] = message['database']
+            try:
+                # Parse the received message (assuming JSON format)
+                message = json.loads(msg.value().decode('utf-8'))
+                mongo_config['url'] = message['mongo_url']
+                mongo_config['username'] = message['username']
+                mongo_config['password'] = message['password']
+                mongo_config['database'] = message['database']
 
-            # Log the updated configuration
-            logging.info(f"Updated MongoDB configuration: {mongo_config}")
+                # Log the updated configuration
+                logging.info(f"Updated MongoDB configuration: {mongo_config}")
 
-            # Run the migration process with the received configuration
-            run_migration(mongo_config)
+                # Run the migration process with the received configuration
+                run_migration(mongo_config)
+            except json.JSONDecodeError:
+                logging.error("Failed to decode JSON from the message.")
+            except Exception as e:
+                logging.error("An error occurred while processing the message.")
+                logging.error(str(e))
 
 except KeyboardInterrupt:
     logging.info("Consumer interrupted and closing.")
