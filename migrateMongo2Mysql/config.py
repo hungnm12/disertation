@@ -1,9 +1,9 @@
 # Source Database Configuration
+
+
 mongo_config = {
     'url': '',
-    'user': '',
-    'password': '',
-    'db_name': '',
+    'db_name': ''
 
 }
 
@@ -11,8 +11,13 @@ mongo_config = {
 mysql_config = {
     'host': '',
     'user': '',
-    'port': 3306,
     'password': '',
+
 }
 
-mysql_db_name = ''
+# Make sure mysql_db_name is also a dictionary
+mysql_db_name = {
+    'database': ''
+}
+mongo_config_received = False
+mysql_config_received = False

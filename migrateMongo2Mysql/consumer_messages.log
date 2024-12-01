@@ -1,0 +1,4 @@
+2024-11-25 22:28:24,771 - INFO - Kafka Consumer for SQL received a message: Sample SQL message received
+2024-11-25 22:28:26,769 - INFO - Kafka Consumer for NoSQL received a message: Sample NoSQL message received
+2024-11-25 22:35:02,213 - INFO - Kafka Consumer for SQL received a message: Sample SQL message received
+2024-11-25 22:35:04,210 - INFO - Kafka Consumer for NoSQL received a message: Sample NoSQL message received

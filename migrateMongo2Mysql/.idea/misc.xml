@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.12" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Remote Python 3.10.12 (sftp://hoangcn@10.150.1.34:22/home/hoangcn/.virtualenvs/migrateMongo2Mysql/bin/python) (2)" project-jdk-type="Python SDK" />
 </project>

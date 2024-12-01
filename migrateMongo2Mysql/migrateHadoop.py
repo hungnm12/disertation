@@ -11,34 +11,34 @@ from datetime import datetime
 from bson.objectid import ObjectId
 from config import mongo_config, mysql_config, mysql_db_name
 from kafka_config import KafkaConsumerService
+from pyspark.sql import SparkSession
 
 DEFAULT_VARCHAR_SIZE = 25
 MAX_VARCHAR_LENGTH = 1000
-BATCH_SIZE = 200
+BATCH_SIZE = 1000
 SKIP_ID_FIELD = False
 SKIP_CLASS_FIELD = False
-
 
 def camel_to_snake(name):
     name = name.replace(' ', '_')
     name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
     return re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()
 
-
 def is_child_key_present_in_value(child_key, value_values):
     return child_key in value_values
-
 
 def convert_document(document, prefix=''):
     return {f"{prefix}_{key}" if prefix else key: convert_value(value) for key, value in document.items()}
 
-
 def enquote(identifier):
     return f"`{identifier}`"
 
-
 def type_to_mysql(column_name, py_type, max_length):
-    varchar_type = f'VARCHAR({min(max(DEFAULT_VARCHAR_SIZE, (max_length // DEFAULT_VARCHAR_SIZE + 1) * DEFAULT_VARCHAR_SIZE), MAX_VARCHAR_LENGTH)})' if max_length and max_length <= MAX_VARCHAR_LENGTH else 'TEXT'
+    varchar_type = (
+        f'VARCHAR({min(max(DEFAULT_VARCHAR_SIZE, (max_length // DEFAULT_VARCHAR_SIZE + 1) * DEFAULT_VARCHAR_SIZE), MAX_VARCHAR_LENGTH)})'
+        if max_length and max_length <= MAX_VARCHAR_LENGTH
+        else 'TEXT'
+    )
     type_mapping = {
         'str': varchar_type,
         'int': 'INT',
@@ -55,7 +55,6 @@ def type_to_mysql(column_name, py_type, max_length):
     }
     return type_mapping.get(py_type, 'VARCHAR(255)')
 
-
 def process_nested_document(doc, prefix=''):
     structure = {}
     for child_key, value in doc.items():
@@ -67,18 +66,19 @@ def process_nested_document(doc, prefix=''):
                     new_key = f"{prefix}_{camel_to_snake(inner_key)}" if prefix else camel_to_snake(inner_key)
                     inner_key_value = value[inner_key]
                     max_length = len(str(inner_key_value))
+
                     structure[new_key] = type_to_mysql(new_key, type(inner_key_value).__name__, max_length)
                     if isinstance(inner_key_value, dict):
                         structure.update(process_nested_document(inner_key_value, new_key))
             else:
-                new_key = f"{prefix}_{camel_to_snake(child_key)}" if prefix else camel_to_snake(child_key)
+                new_key = \
+f"{prefix}_{camel_to_snake(child_key)}" if prefix else camel_to_snake(child_key)
                 structure.update(process_nested_document(value, new_key))
         else:
             max_length = len(str(value))
             new_key = f"{prefix}_{camel_to_snake(child_key)}" if prefix else camel_to_snake(child_key)
             structure[new_key] = type_to_mysql(new_key, type(value).__name__, max_length)
     return structure
-
 
 def convert_nested_document(doc, prefix=''):
     new_document = {}
@@ -89,6 +89,7 @@ def convert_nested_document(doc, prefix=''):
                 value_keys = doc_value.keys()
                 for inner_key in value_keys:
                     new_key = f"{prefix}_{camel_to_snake(inner_key)}" if prefix else camel_to_snake(inner_key)
+
                     inner_key_value = doc_value[inner_key]
                     new_document[new_key] = convert_value(inner_key_value)
                     if isinstance(inner_key_value, dict):
@@ -100,7 +101,6 @@ def convert_nested_document(doc, prefix=''):
             new_key = f"{prefix}_{camel_to_snake(child_key)}" if prefix else camel_to_snake(child_key)
             new_document[new_key] = convert_value(doc_value)
     return new_document
-
 
 def convert_value(value):
     if isinstance(value, ObjectId):
@@ -116,10 +116,10 @@ def convert_value(value):
     else:
         return value
 
-
 def create_mysql_table(mysql_cursor, collection_name, document):
     collection_name = camel_to_snake(collection_name)
-    max_lengths = {camel_to_snake(key): len(str(value)) for key, value in document.items() if
+    max_lengths = {camel_to_snake(key): len(str(value)) for \
+key, value in document.items() if
                    key not in ['_id', '_class']}
     structure = {}
     for key, value in document.items():
@@ -137,7 +137,6 @@ def create_mysql_table(mysql_cursor, collection_name, document):
     column_definitions.extend([f'{enquote(key)} {structure[key]}' for key in structure.keys()])
     sql = f"CREATE TABLE IF NOT EXISTS {enquote(collection_name)} ({', '.join(column_definitions)});"
     mysql_cursor.execute(sql)
-
 
 def insert_into_mysql(mysql_cursor, collection_name, document):
     collection_name = camel_to_snake(collection_name)
@@ -161,6 +160,7 @@ def insert_into_mysql(mysql_cursor, collection_name, document):
                 for field in missing_fields:
                     field_length = len(str(document[field]))
                     mongo_type = type(document[field]).__name__
+
                     field_type = type_to_mysql(field, mongo_type, field_length)
                     mysql_cursor.execute(f"ALTER TABLE {collection_name} ADD COLUMN {field} {field_type}")
             elif 'Incorrect datetime value' in str(e):
@@ -194,10 +194,10 @@ def insert_into_mysql(mysql_cursor, collection_name, document):
                 mysql_cursor.execute(f"ALTER TABLE {collection_name} MODIFY {field} {new_type}")
             elif 'Data truncated' in str(e) or 'Incorrect integer value' in str(e):
                 field = re.search(r"column '([^']+)'", str(e)).group(1)
-                mysql_cursor.execute(f"ALTER TABLE {collection_name} MODIFY {field} VARCHAR({DEFAULT_VARCHAR_SIZE})")
+                mysql_cursor.execute(f"ALTER TABLE {collection_name} MODIFY {field} \
+VARCHAR({DEFAULT_VARCHAR_SIZE})")
             else:
                 raise
-
 
 def start_migration():
     try:
@@ -205,38 +205,65 @@ def start_migration():
 
         start_time = time.time()
 
-        # Connect to MongoDB
-        with pymongo.MongoClient(mongo_config['url']) as mongo_client:
-            mongo_db = mongo_client[mongo_config['db_name']]
+        # Create a SparkSession
+        spark = SparkSession.builder \
+            .appName("MongoDBtoHadoop") \
+            .config("spark.mongodb.input.uri", mongo_config['url']) \
+            .getOrCreate()
 
-            # Connect to MySQL
-            with pymysql.connect(**mysql_config) as mysql_conn:
-                mysql_cursor = mysql_conn.cursor()
-                local_mysql_db_name = mysql_db_name['database'].replace('-', '_')
+        # Connect to MySQL
+        with pymysql.connect(**mysql_config) as mysql_conn:
+            mysql_cursor = mysql_conn.cursor()
+            local_mysql_db_name = mysql_db_name['database'].replace('-', '_')
 
-                # Drop the database if it exists
-                mysql_cursor.execute(f"DROP DATABASE IF EXISTS {local_mysql_db_name}")
-                # Create the database
-                mysql_cursor.execute(f"CREATE DATABASE {local_mysql_db_name}")
-                # Use the database
-                mysql_cursor.execute(f"USE {local_mysql_db_name}")
+            # Drop the database if it exists
+            mysql_cursor.execute(f"DROP DATABASE IF EXISTS {local_mysql_db_name}")
 
-                # Iterate over all collections in MongoDB
+            # Create the database
+            mysql_cursor.execute(f"CREATE DATABASE {local_mysql_db_name}")
+            # Use the database
+            mysql_cursor.execute(f"USE {local_mysql_db_name}")
+
+            # Iterate over all collections in MongoDB
+            with pymongo.MongoClient(mongo_config['url']) as mongo_client:
+                mongo_db = mongo_client[mongo_config['db_name']]
                 for collection_name in mongo_db.list_collection_names():
                     print('\ncollection_name=', collection_name)
-                    collection = mongo_db[collection_name]
-                    # Get the structure of the collection
-                    document = collection.find_one()
-                    if document:  # Check if the collection is not empty
+
+                    # Read data from MongoDB using Spark
+                    df = spark.read.format("mongo") \
+                        .option("database", mongo_config['db_name']) \
+                        .option("collection", collection_name) \
+                        .load()
+
+                    # Perform data transformations using Spark
+                    # ... (apply necessary transformations to df) ...
+
+                    # Convert Spark DataFrame to Pandas DataFrame for MySQL insertion
+                    pandas_df = df.toPandas()
+
+                    if not pandas_df.empty:
+                        # Get the structure of the collection
+                        document = pandas_df.iloc[0].to_dict()
+
                         # Create a table in MySQL based on the collection's structure
                         create_mysql_table(mysql_cursor, collection_name, document)
-                        # Insert data from MongoDB to MySQL
-                        for document in collection.find():
+
+                        # Insert data from Pandas DataFrame to MySQL
+                        for index, row in pandas_df.iterrows():
+                            document = row.to_dict()
                             insert_into_mysql(mysql_cursor, collection_name, document)
                     else:
                         logging.warning(f"Collection '{collection_name}' is empty. Skipping.")
-                # Commit the transaction
-                mysql_conn.commit()
+
+                    # Commit the transaction
+                    mysql_conn.commit()
+
+        # Write data to Hadoop storage (optional)
+        df.write.csv("hdfs://namenode:9000/hadoop-output", header=True)
+        # Or use any other Hadoop-compatible output format
+
+        spark.stop()
 
         end_time = time.time()
         total_time = round(end_time - start_time, 2)
@@ -245,7 +272,6 @@ def start_migration():
     except Exception as e:
         traceback_str = traceback.format_exc()
         print(traceback_str)
-
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
